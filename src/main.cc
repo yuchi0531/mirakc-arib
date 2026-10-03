@@ -54,6 +54,7 @@
 #include "service_scanner.hh"
 #include "start_seeker.hh"
 #include "tsduck_helper.hh"
+#include "tsmf_filter.hh"
 #include "pes_printer.hh"
 
 namespace {
@@ -74,7 +75,7 @@ Tools to process ARIB TS streams.
 Usage:
   mirakc-arib (-h | --help)
     [(scan-services | sync-clocks | collect-eits | collect-eitpf | collect-logos |
-      filter-service | filter-program | filter-program-metadata |
+      filter-service | filter-tsmf | filter-program | filter-program-metadata |
       record-service | track-airtime | seek-start | print-pes)]
   mirakc-arib --version
   mirakc-arib scan-services [--sids=<sid>...] [--xsids=<sid>...] [<file>]
@@ -87,6 +88,7 @@ Usage:
                             [--streaming] [(--present | --following)] [<file>]
   mirakc-arib collect-logos [<file>]
   mirakc-arib filter-service --sid=<sid> [<file>]
+  mirakc-arib filter-tsmf --relative-ts=<n> [<file>]
   mirakc-arib filter-program --sid=<sid> --eid=<eid>
     --clock-pid=<pid> --clock-pcr=<pcr> --clock-time=<unix-time-ms>
     [--audio-tags=<tag>...] [--video-tags=<tag>...]
@@ -511,6 +513,38 @@ Description:
   Unlike Mirakurun, packets listed below are always dropped:
 
     * SDTT (PID=0x0023,0x0028)
+)";
+
+static const std::string kFilterTsmf = "filter-tsmf";
+
+static const std::string kFilterTsmfHelp = R"(
+TSMF filter
+
+Usage:
+  mirakc-arib filter-tsmf --relative-ts=<n> [<file>]
+
+Options:
+  -h --help
+    Print help.
+
+  --relative-ts=<n>
+    Relative TS number to extract (1-15).
+
+Arguments:
+  <file>
+    Path to a TS file.
+
+Description:
+  `filter-tsmf` extracts a single relative TS stream from a TSMF (MPEG-TS
+  Multi Frame) stream.
+
+  TSMF multiplexes up to 15 relative TS streams into a single MPEG-TS stream
+  for CATV retransmission.  Frame synchronization packets on PID 0x002F carry
+  a table which maps each of the 52 slots in a frame to a relative TS number.
+  `filter-tsmf` forwards only the packets belonging to the relative TS stream
+  specified with `--relative-ts`, which must be between 1 and 15.
+
+  The behavior is compatible with the `tsmfRelTs` property of Mirakurun.
 )";
 
 static const std::string kFilterProgram = "filter-program";
@@ -1042,6 +1076,8 @@ void Init(const Args& args) {
     InitLogger(kCollectLogos);
   } else if (args.at(kFilterService).asBool()) {
     InitLogger(kFilterService);
+  } else if (args.at(kFilterTsmf).asBool()) {
+    InitLogger(kFilterTsmf);
   } else if (args.at(kFilterProgram).asBool()) {
     InitLogger(kFilterProgram);
   } else if (args.at(kFilterProgramMetadata).asBool()) {
@@ -1177,6 +1213,18 @@ void LoadOption(const Args& args, ServiceFilterOption* opt) {
       MIRAKC_ARIB_INFO("ServiceFilterOptions: sid=#{:04X}", opt->sid);
     }
   }
+}
+
+void LoadOption(const Args& args, TsmfFilterOption* opt) {
+  static const std::string kRelativeTs = "--relative-ts";
+
+  auto relative_ts = args.at(kRelativeTs).asLong();
+  if (relative_ts < 1 || relative_ts > 15) {
+    MIRAKC_ARIB_ERROR("{}: must be between 1 and 15: {}", kRelativeTs, relative_ts);
+    std::abort();
+  }
+  opt->relative_ts_number = static_cast<int>(relative_ts);
+  MIRAKC_ARIB_INFO("TsmfFilterOptions: relative-ts={}", opt->relative_ts_number);
 }
 
 void LoadOption(const Args& args, ProgramFilterOption* opt) {
@@ -1357,6 +1405,13 @@ std::unique_ptr<PacketSink> MakePacketSink(const Args& args) {
     filter->Connect(std::make_unique<StdoutSink>());
     return filter;
   }
+  if (args.at(kFilterTsmf).asBool()) {
+    TsmfFilterOption option;
+    LoadOption(args, &option);
+    auto filter = std::make_unique<TsmfFilter>(option);
+    filter->Connect(std::make_unique<StdoutSink>());
+    return filter;
+  }
   if (args.at(kFilterProgram).asBool()) {
     ProgramFilterOption program_filter_option;
     LoadOption(args, &program_filter_option);
@@ -1423,6 +1478,8 @@ void ShowHelp(const Args& args) {
     fmt::print(kCollectLogosHelp);
   } else if (args.at(kFilterService).asBool()) {
     fmt::print(kFilterServiceHelp);
+  } else if (args.at(kFilterTsmf).asBool()) {
+    fmt::print(kFilterTsmfHelp);
   } else if (args.at(kFilterProgram).asBool()) {
     fmt::print(kFilterProgramHelp);
   } else if (args.at(kFilterProgramMetadata).asBool()) {

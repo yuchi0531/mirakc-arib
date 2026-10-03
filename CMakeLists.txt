@@ -817,6 +817,7 @@ add_executable(mirakc-arib
   src/service_scanner.hh
   src/start_seeker.hh
   src/tsduck_helper.hh
+  src/tsmf_filter.hh
 )
 
 set_target_properties(mirakc-arib
@@ -890,6 +891,7 @@ if(MIRAKC_ARIB_TEST)
     test/test.cc
     test/test_helper.hh
     test/tsduck_helper_test.cc
+    test/tsmf_filter_test.cc
   )
 
   target_compile_definitions(mirakc-arib-test
